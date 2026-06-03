@@ -117,6 +117,9 @@ class _ControleScreenState extends State<ControleScreen> {
   bool get isConnected => (connection?.isConnected ?? false);
 
   String terminalLog = "Aguardando conexão...";
+  
+  // NOVA LISTA PARA ARMAZENAR A FILA DE COMANDOS
+  List<String> _filaComandos = [];
 
   @override
   void initState() {
@@ -151,23 +154,86 @@ class _ControleScreenState extends State<ControleScreen> {
     }
   }
 
+  // MÉTODO PARA ADICIONAR COMANDO À FILA (EM VEZ DE ENVIAR DIRETO)
+  void _adicionarAFila(String comando, String nomeComando) {
+    setState(() {
+      _filaComandos.add(comando);
+      terminalLog = "Fila: ${_filaComandos.join(' -> ')}";
+    });
+  }
+
+  // MÉTODO PARA LIMPAR A FILA LOCAL
+  void _limparFila() {
+    setState(() {
+      _filaComandos.clear();
+      terminalLog = "Fila limpa!";
+    });
+  }
+
+  // MÉTODO PARA EXECUTAR TODOS OS COMANDOS DA FILA
+  void _executarFila() async {
+    if (!isConnected) {
+      setState(() {
+        terminalLog = "Robô não está conectado!";
+      });
+      return;
+    }
+
+    if (_filaComandos.isEmpty) {
+      setState(() {
+        terminalLog = "A fila está vazia!";
+      });
+      return;
+    }
+
+    setState(() {
+      terminalLog = "Iniciando execução da fila...";
+    });
+
+    try {
+      for (String cmd in _filaComandos) {
+        // Envia o comando individual
+        connection!.output.add(ascii.encode("$cmd\n"));
+        await connection!.output.allSent;
+        
+        setState(() {
+          terminalLog = "Enviando: $cmd";
+        });
+
+        // Pequeno intervalo para o Arduino processar o comando antes do próximo
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
+
+      // Opcional: Enviar um comando 'E' se o seu código Arduino precisar dele 
+      // para saber que a sequência terminou.
+      // connection!.output.add(ascii.encode("E\n"));
+      // await connection!.output.allSent;
+
+      setState(() {
+        terminalLog = "Execução concluída!";
+        _filaComandos.clear(); // Limpa a fila após executar
+      });
+    } catch (e) {
+      setState(() {
+        terminalLog = "Erro durante a execução.";
+      });
+    }
+  }
+
+  // Mantivemos o enviarComando original para casos especiais se necessário
   void _enviarComando(String comando, String nomeComando) async {
     if (isConnected) {
       try {
         connection!.output.add(ascii.encode("$comando\n"));
         await connection!.output.allSent;
         setState(() {
-          terminalLog = "Enviado: $nomeComando";
+          terminalLog = "Enviado direto: $nomeComando";
         });
       } catch (e) {
         setState(() {
           terminalLog = "Erro ao enviar.";
         });
       }
-    } else {
-      setState(() {
-        terminalLog = "Robô não está conectado!";
-      });
     }
   }
 
@@ -254,7 +320,7 @@ class _ControleScreenState extends State<ControleScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => _enviarComando('X', 'LIMPAR FILA'),
+                    onPressed: _limparFila,
                     icon: const Icon(Icons.delete),
                     label: const Text('Limpar'),
                     style: ElevatedButton.styleFrom(
@@ -267,7 +333,7 @@ class _ControleScreenState extends State<ControleScreen> {
                 const SizedBox(width: 15),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => _enviarComando('E', 'EXECUTAR FILA'),
+                    onPressed: _executarFila,
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('Executar'),
                     style: ElevatedButton.styleFrom(
@@ -302,7 +368,7 @@ class _ControleScreenState extends State<ControleScreen> {
     return Padding(
       padding: const EdgeInsets.all(5.0),
       child: InkWell(
-        onTap: () => _enviarComando(cmd, nome),
+        onTap: () => _adicionarAFila(cmd, nome),
         child: Container(
           decoration: BoxDecoration(
             color: bgColor,
